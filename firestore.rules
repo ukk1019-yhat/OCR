@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write to documents and corrections collections
+    // For production: add authentication checks
+    match /documents/{docId} {
+      allow read, write: if true;
+    }
+    match /corrections/{corrId} {
+      allow read, write: if true;
+    }
+  }
+}

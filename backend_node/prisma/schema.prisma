@@ -1,0 +1,173 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  hashedPassword   String
+  role             String   @default("analyst") // admin, analyst, reviewer
+  fullName         String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  settings         Settings?
+  notifications    Notification[]
+  documents        Document[]
+  correctionActions CorrectionAction[]
+}
+
+model Settings {
+  id                      String   @id @default(uuid())
+  userId                  String   @unique
+  theme                   String   @default("dark")
+  autoCorrectionEnabled   Boolean  @default(false)
+  confidenceThreshold     Int      @default(90)
+  emailNotifications      Boolean  @default(true)
+  customRules             Json?    @default("{}")
+
+  user                    User     @relation(fields: [userId], references: [id])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String?
+  message     String?
+  type        String?  // alert, info, success
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Document {
+  id                  String   @id @default(uuid())
+  userId              String?
+  filename            String
+  documentType        String?  // invoice, form, receipt, unknown
+  originalFileUrl     String?
+  preprocessedFileUrl String?
+  uploadStatus        String   @default("uploaded")
+  processingStatus    String   @default("pending")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  uploader          User?             @relation(fields: [userId], references: [id])
+  versions          DocumentVersion[]
+  extractedFields   ExtractedField[]
+  processingJobs    ProcessingJob[]
+  anomalies         Anomaly[]
+}
+
+model DocumentVersion {
+  id             String   @id @default(uuid())
+  documentId     String
+  versionNumber  Int      @default(1)
+  fileUrl        String?
+  createdAt      DateTime @default(now())
+  
+  document       Document @relation(fields: [documentId], references: [id])
+}
+
+model ProcessingJob {
+  id             String   @id @default(uuid())
+  documentId     String
+  celeryTaskId   String?  // BullMQ job id
+  status         String   @default("queued")
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  document       Document @relation(fields: [documentId], references: [id])
+}
+
+model ExtractedField {
+  id               String   @id @default(uuid())
+  documentId       String
+  fieldName        String
+  rawValue         String?
+  normalizedValue  String?
+  boundingBox      Json?
+  confidenceScore  Float?
+  isHandwritten    Boolean  @default(false)
+  
+  document         Document @relation(fields: [documentId], references: [id])
+}
+
+model Anomaly {
+  id               String   @id @default(uuid())
+  documentId       String
+  fieldName        String?
+  anomalyType      String?  // missing, misread, format, duplicate, logic
+  severity         String?  // low, medium, high
+  originalValue    String?
+  suggestedValue   String?
+  confidenceScore  Float?
+  coordinates      Json?
+  status           String   @default("unresolved")
+  
+  document         Document               @relation(fields: [documentId], references: [id])
+  suggestions      CorrectionSuggestion[]
+}
+
+model ConfidenceScore {
+  id               String   @id @default(uuid())
+  documentId       String
+  overallScore     Float?
+  fieldScores      Json?
+  createdAt        DateTime @default(now())
+}
+
+model CorrectionSuggestion {
+  id               String   @id @default(uuid())
+  anomalyId        String
+  suggestedValue   String?
+  reason           String?
+  confidence       Float?
+  accepted         Boolean?
+  
+  anomaly          Anomaly              @relation(fields: [anomalyId], references: [id])
+  actions          CorrectionAction[]
+}
+
+model CorrectionAction {
+  id               String   @id @default(uuid())
+  suggestionId     String
+  userId           String?
+  action           String?  // accept, reject, manual_edit
+  finalValue       String?
+  actionAt         DateTime @default(now())
+  
+  suggestion       CorrectionSuggestion @relation(fields: [suggestionId], references: [id])
+  user             User?                @relation(fields: [userId], references: [id])
+}
+
+model AnalyticsSnapshot {
+  id                      String   @id @default(uuid())
+  snapshotDate            DateTime @default(now())
+  totalProcessed          Int      @default(0)
+  totalAnomalies          Int      @default(0)
+  avgAccuracy             Float    @default(0.0)
+  avgProcessingTimeMs     Int      @default(0)
+  errorTypeDistribution   Json?
+  riskDistribution        Json?
+}
+
+model Report {
+  id               String   @id @default(uuid())
+  name             String?
+  reportType       String?  // summary, anomalies_log, performance
+  formatType       String?  // pdf, csv
+  fileSizeBytes    Int?
+  fileUrl          String?
+  createdAt        DateTime @default(now())
+}
